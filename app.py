@@ -1,5 +1,4 @@
-# app.py
-# Qari Recognizer — Gradio UI + FastAPI JSON API (HF Spaces friendly)
+# app.py — minimal, non-blocking startup (HF Spaces friendly)
 
 import os
 import gc
@@ -9,14 +8,13 @@ import torch
 import joblib
 import gradio as gr
 
-# ---- Gradio/Spaces runtime flags (avoid double-launch & analytics)
+# --- Gradio/Spaces runtime flags (avoid double-launch & analytics)
 os.environ["GRADIO_ALLOW_FLAGGING"] = "never"
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 os.environ["GRADIO_LAUNCH_METHOD"] = "spaces"
 
-# ---- COMPAT SHIM (must be before importing speechbrain)
-# SpeechBrain<=0.5.16 calls hf_hub_download(..., use_auth_token=...).
-# Newer huggingface_hub removed that kwarg; map to `token`.
+# ---- COMPAT SHIM (before importing speechbrain)
+# SpeechBrain<=0.5.16 used use_auth_token; newer hub renamed to token.
 try:
     import huggingface_hub as _hh  # type: ignore
     from huggingface_hub import hf_hub_download as _orig_hf_hub_download  # type: ignore
@@ -41,8 +39,8 @@ MAX_SECONDS = 12
 MAX_SAMPLES = SR * MAX_SECONDS
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-CLASSIFIER_PATH = "finalfull_qari_classifier.pkl"  # upload alongside app.py
-ECAPA_LOCAL_DIR = "models/ecapa"                   # local folder for ECAPA files
+CLASSIFIER_PATH = "finalfull_qari_classifier.pkl"   # uploaded alongside app.py
+ECAPA_LOCAL_DIR = "models/ecapa"                    # local folder for ECAPA
 SB_SAVEDIR = os.path.join("pretrained_models", "ecapa_cache")
 
 NEEDED_FILES = [
@@ -53,8 +51,12 @@ NEEDED_FILES = [
     "label_encoder.txt",
 ]
 
-# ===================== Ensure ECAPA files locally =====================
+# ===================== Lazy, on-demand loaders =====================
+_embedder = None
+_clf = None
+
 def ensure_ecapa_local():
+    """Ensure SpeechBrain ECAPA files exist locally (download once if missing)."""
     ok = os.path.isdir(ECAPA_LOCAL_DIR) and all(
         os.path.isfile(os.path.join(ECAPA_LOCAL_DIR, f)) for f in NEEDED_FILES
     )
@@ -69,17 +71,14 @@ def ensure_ecapa_local():
         )
         print("ECAPA files ready at:", ECAPA_LOCAL_DIR)
 
-# ===================== Lazy loaders =====================
-_embedder = None
-_clf = None
-
 def get_embedder():
+    """Load SpeechBrain ECAPA only when first needed."""
     global _embedder
     if _embedder is None:
         ensure_ecapa_local()
         print(f"Loading SpeechBrain ECAPA from {ECAPA_LOCAL_DIR} on {DEVICE} …")
         _embedder = EncoderClassifier.from_hparams(
-            source=ECAPA_LOCAL_DIR,     # local path (no Hub fetch during encode)
+            source=ECAPA_LOCAL_DIR,     # local path (no hub fetch during encode)
             run_opts={"device": DEVICE},
             savedir=SB_SAVEDIR,
         ).eval()
@@ -87,6 +86,7 @@ def get_embedder():
     return _embedder
 
 def get_classifier():
+    """Load your SVM only when first needed."""
     global _clf
     if _clf is None:
         print("Loading Qari SVM classifier …")
@@ -109,7 +109,6 @@ def extract_embedding_from_path(path: str) -> np.ndarray:
     with torch.no_grad():
         emb = get_embedder().encode_batch(wav).squeeze().detach().cpu().numpy()
     emb = emb.reshape(1, -1)
-    # cleanup
     del wav
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -121,7 +120,7 @@ def predict_gradio(file):
     if file is None:
         return "No file provided."
     try:
-        path = getattr(file, "name", file)  # gradio may pass a path/tuple
+        path = getattr(file, "name", file)  # gradio may pass a path/tempfile
         X = extract_embedding_from_path(path)
         pred = str(get_classifier().predict(X)[0])
         return f"Predicted Qari: {pred}"
@@ -140,7 +139,7 @@ ui = gr.Interface(
     description="Uploads a short recitation and predicts the Qari name."
 )
 
-# Export a Gradio variable so the SDK can detect one
+# Export a Gradio variable so the SDK detects a Gradio app
 demo = ui
 
 # ===================== FastAPI JSON API =====================
@@ -179,19 +178,8 @@ async def predict(audio: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-# ===================== Mount app & non-blocking warmup =====================
+# ===================== Mount app (NO preload at import) =====================
 # Export ASGI app for Spaces (FastAPI with Gradio mounted at "/")
 app = gr.mount_gradio_app(api, demo, path="/")
 
-# Warm up in background so initialization doesn't block
-import threading
-def _warmup():
-    try:
-        _ = get_embedder()
-        _ = get_classifier()
-        print("Warmup finished ✅")
-    except Exception as e:
-        print("Warmup failed (will load on first request):", e)
-
-if os.environ.get("PRELOAD_ON_START", "1") == "1":
-    threading.Thread(target=_warmup, daemon=True).start()
+# No warmup here. Models load on first request to avoid blocking initialization.
