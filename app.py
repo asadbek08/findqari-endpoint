@@ -151,12 +151,21 @@ def get_classifier():
 
 # ===================== DSP helpers =====================
 def load_audio_16k(path: str) -> np.ndarray:
-    y, _ = librosa.load(path, sr=SR, mono=True)
-    if len(y) < MAX_SAMPLES:
-        y = np.pad(y, (0, MAX_SAMPLES - len(y)))
-    elif len(y) > MAX_SAMPLES:
-        y = y[:MAX_SAMPLES]
-    return y.astype(np.float32)
+    try:
+        y, _ = librosa.load(path, sr=SR, mono=True)
+        print(f"Loaded audio shape: {y.shape}, dtype: {y.dtype}", file=sys.stderr)
+        
+        if len(y) < MAX_SAMPLES:
+            # Use numpy padding instead of torch padding
+            y = np.pad(y, (0, MAX_SAMPLES - len(y)), mode='constant', constant_values=0)
+        elif len(y) > MAX_SAMPLES:
+            y = y[:MAX_SAMPLES]
+        
+        print(f"Processed audio shape: {y.shape}", file=sys.stderr)
+        return y.astype(np.float32)
+    except Exception as e:
+        print(f"Error loading audio: {e}", file=sys.stderr)
+        raise
 
 def extract_embedding_from_path(path: str) -> np.ndarray:
     y = load_audio_16k(path)
@@ -176,10 +185,19 @@ def predict_gradio(file):
         return "No file provided."
     try:
         path = getattr(file, "name", file)  # gradio may pass a path/tempfile
+        print(f"Processing file: {path}", file=sys.stderr)
+        
         X = extract_embedding_from_path(path)
+        print(f"Extracted embedding shape: {X.shape}", file=sys.stderr)
+        
         pred = str(get_classifier().predict(X)[0])
+        print(f"Prediction: {pred}", file=sys.stderr)
+        
         return f"Predicted Qari: {pred}"
     except Exception as e:
+        print(f"Prediction error: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         return f"Error: {str(e)}"
 
 ui = gr.Interface(
