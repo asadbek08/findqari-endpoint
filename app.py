@@ -169,9 +169,24 @@ def load_audio_16k(path: str) -> np.ndarray:
 
 def extract_embedding_from_path(path: str) -> np.ndarray:
     y = load_audio_16k(path)
-    wav = torch.from_numpy(y).unsqueeze(0).unsqueeze(1).to(DEVICE)  # [1,1,T]
+    print(f"Audio array shape before tensor: {y.shape}", file=sys.stderr)
+    
+    # Create tensor with proper dimensions for SpeechBrain ECAPA
+    wav = torch.from_numpy(y).unsqueeze(0).to(DEVICE)  # [1, T] - batch dimension only
+    print(f"Tensor shape: {wav.shape}, device: {wav.device}", file=sys.stderr)
+    
     with torch.no_grad():
-        emb = get_embedder().encode_batch(wav).squeeze().detach().cpu().numpy()
+        try:
+            emb = get_embedder().encode_batch(wav).squeeze().detach().cpu().numpy()
+            print(f"Embedding shape: {emb.shape}", file=sys.stderr)
+        except Exception as e:
+            print(f"Error during embedding extraction: {e}", file=sys.stderr)
+            # Try alternative tensor shape if first attempt fails
+            wav_alt = wav.unsqueeze(1)  # [1, 1, T]
+            print(f"Trying alternative tensor shape: {wav_alt.shape}", file=sys.stderr)
+            emb = get_embedder().encode_batch(wav_alt).squeeze().detach().cpu().numpy()
+            print(f"Alternative embedding shape: {emb.shape}", file=sys.stderr)
+    
     emb = emb.reshape(1, -1)
     del wav
     if torch.cuda.is_available():
