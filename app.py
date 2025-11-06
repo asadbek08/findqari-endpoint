@@ -13,6 +13,13 @@ import torch
 import joblib
 import gradio as gr
 
+
+
+os.environ["GRADIO_ALLOW_FLAGGING"] = "never"
+os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
+os.environ["GRADIO_LAUNCH_METHOD"] = "spaces"  # 👈 important line
+
+
 # ---- COMPAT SHIM (must be before importing speechbrain) -----------------------
 # SpeechBrain<=0.5.16 still calls hf_hub_download(..., use_auth_token=...).
 # Newer huggingface_hub removed that kwarg in favor of `token`.
