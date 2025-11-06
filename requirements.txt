@@ -1,18 +1,13 @@
-# Core
 torch==2.2.1
 torchaudio==2.2.1
-numpy<2.0            # safer with current librosa/scipy on Spaces
+numpy<2.0
 librosa==0.10.2.post1
 soundfile
 joblib
 scikit-learn==1.2.2
-torchvision==0.17.1
-
-# UI / API
+speechbrain==0.5.16
+huggingface_hub==0.19.4
 gradio>=4.44.0
 fastapi
 uvicorn
 
-# SpeechBrain + compatible hub
-speechbrain==0.5.16
-huggingface_hub==0.19.4   # <-- important: keeps `use_auth_token` arg available
