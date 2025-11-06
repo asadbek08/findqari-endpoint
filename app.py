@@ -55,7 +55,7 @@ def get_embedder():
     if _embedder is None:
         print(f"Loading SpeechBrain ECAPA on {DEVICE} …")
         _embedder = EncoderClassifier.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
+            source="models/ecapa",
             run_opts={"device": DEVICE},
             savedir=SB_SAVEDIR,
         ).eval()
