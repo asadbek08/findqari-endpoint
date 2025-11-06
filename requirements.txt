@@ -5,7 +5,8 @@ numpy<2.0            # safer with current librosa/scipy on Spaces
 librosa==0.10.2.post1
 soundfile
 joblib
-scikit-learn
+scikit-learn==1.2.2
+torchvision==0.17.1
 
 # UI / API
 gradio>=4.44.0
