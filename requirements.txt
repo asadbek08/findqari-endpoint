@@ -1,0 +1,11 @@
+torch
+torchaudio
+librosa
+soundfile
+numpy
+joblib
+scikit-learn
+speechbrain==0.5.16
+gradio
+fastapi
+uvicorn
