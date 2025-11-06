@@ -30,7 +30,7 @@ except Exception as _e:
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
-from huggingface_hub import snapshot_download
+from huggingface_hub import snapshot_download, hf_hub_download
 from speechbrain.pretrained import EncoderClassifier
 
 # ===================== Config =====================
@@ -90,7 +90,31 @@ def get_classifier():
     global _clf
     if _clf is None:
         print("Loading Qari SVM classifier …")
-        _clf = joblib.load(CLASSIFIER_PATH)
+        
+        classifier_file = CLASSIFIER_PATH
+        
+        # Check if local file exists and if it's a Git LFS pointer
+        if os.path.exists(CLASSIFIER_PATH):
+            with open(CLASSIFIER_PATH, 'rb') as f:
+                first_line = f.readline().decode('utf-8', errors='ignore').strip()
+                if first_line.startswith('version https://git-lfs.github.com'):
+                    print("Local file is Git LFS pointer, downloading from Hub...")
+                    try:
+                        # Try to get the space name from environment or use a fallback
+                        space_name = os.environ.get('SPACE_ID', 'asadbekiskandarov/qari-recognizer')
+                        classifier_file = hf_hub_download(
+                            repo_id=space_name,
+                            filename="finalfull_qari_classifier.pkl",
+                            repo_type="space"
+                        )
+                        print(f"Downloaded classifier from Hub to: {classifier_file}")
+                    except Exception as e:
+                        print(f"Failed to download from Hub: {e}")
+                        raise RuntimeError(f"Classifier file is Git LFS pointer and download failed: {e}")
+        else:
+            raise FileNotFoundError(f"Classifier file not found: {CLASSIFIER_PATH}")
+        
+        _clf = joblib.load(classifier_file)
         print("Classifier loaded ✅")
     return _clf
 
