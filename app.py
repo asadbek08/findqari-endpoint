@@ -266,15 +266,18 @@ async def predict(audio: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-# ===================== Mount app (NO preload at import) =====================
-# Export ASGI app for Spaces (FastAPI with Gradio mounted at "/")
-print("Mounting Gradio app to FastAPI...", file=sys.stderr)
-app = gr.mount_gradio_app(api, demo, path="/")
-
+# ===================== For Gradio SDK =====================
+# Export the Gradio interface as the main app
 print("=" * 60, file=sys.stderr)
 print("✓ Application initialized successfully!", file=sys.stderr)
 print(f"✓ Device: {DEVICE}", file=sys.stderr)
 print(f"✓ Models will load on first request (lazy loading)", file=sys.stderr)
 print("=" * 60, file=sys.stderr)
+
+# For Gradio SDK - this will be the main interface
+app = demo
+
+# Also create FastAPI app for API access (will be available at /api/)
+api_app = api
 
 # No warmup here. Models load on first request to avoid blocking initialization.
