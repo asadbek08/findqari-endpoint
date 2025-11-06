@@ -1,5 +1,6 @@
 # app.py — minimal, non-blocking startup (HF Spaces friendly)
 
+import sys
 import os
 import gc
 import numpy as np
@@ -7,6 +8,13 @@ import librosa
 import torch
 import joblib
 import gradio as gr
+
+print("=" * 60, file=sys.stderr)
+print("Starting Qari Recognizer App...", file=sys.stderr)
+print(f"Python: {sys.version}", file=sys.stderr)
+print(f"PyTorch: {torch.__version__}", file=sys.stderr)
+print(f"NumPy: {np.__version__}", file=sys.stderr)
+print("=" * 60, file=sys.stderr)
 
 # --- Gradio/Spaces runtime flags (avoid double-launch & analytics)
 os.environ["GRADIO_ALLOW_FLAGGING"] = "never"
@@ -28,10 +36,27 @@ try:
 except Exception as _e:
     print("INFO: hf_hub_download compat shim not applied:", _e)
 
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import JSONResponse
-from huggingface_hub import snapshot_download, hf_hub_download
-from speechbrain.pretrained import EncoderClassifier
+try:
+    from fastapi import FastAPI, UploadFile, File
+    from fastapi.responses import JSONResponse
+    print("✓ FastAPI imported", file=sys.stderr)
+except Exception as e:
+    print(f"✗ FastAPI import error: {e}", file=sys.stderr)
+    raise
+
+try:
+    from huggingface_hub import snapshot_download, hf_hub_download
+    print("✓ Hugging Face Hub imported", file=sys.stderr)
+except Exception as e:
+    print(f"✗ HF Hub import error: {e}", file=sys.stderr)
+    raise
+
+try:
+    from speechbrain.pretrained import EncoderClassifier
+    print("✓ SpeechBrain imported", file=sys.stderr)
+except Exception as e:
+    print(f"✗ SpeechBrain import error: {e}", file=sys.stderr)
+    raise
 
 # ===================== Config =====================
 SR = 16000
@@ -89,7 +114,7 @@ def get_classifier():
     """Load your SVM only when first needed."""
     global _clf
     if _clf is None:
-        print("Loading Qari SVM classifier …")
+        print("Loading Qari SVM classifier …", file=sys.stderr)
         
         classifier_file = CLASSIFIER_PATH
         
@@ -98,7 +123,7 @@ def get_classifier():
             with open(CLASSIFIER_PATH, 'rb') as f:
                 first_line = f.readline().decode('utf-8', errors='ignore').strip()
                 if first_line.startswith('version https://git-lfs.github.com'):
-                    print("Local file is Git LFS pointer, downloading from Hub...")
+                    print("Local file is Git LFS pointer, downloading from Hub...", file=sys.stderr)
                     try:
                         # Try to get the space name from environment or use a fallback
                         space_name = os.environ.get('SPACE_ID', 'asadbekiskandarov/qari-recognizer')
@@ -107,15 +132,21 @@ def get_classifier():
                             filename="finalfull_qari_classifier.pkl",
                             repo_type="space"
                         )
-                        print(f"Downloaded classifier from Hub to: {classifier_file}")
+                        print(f"Downloaded classifier from Hub to: {classifier_file}", file=sys.stderr)
                     except Exception as e:
-                        print(f"Failed to download from Hub: {e}")
+                        print(f"Failed to download from Hub: {e}", file=sys.stderr)
                         raise RuntimeError(f"Classifier file is Git LFS pointer and download failed: {e}")
         else:
             raise FileNotFoundError(f"Classifier file not found: {CLASSIFIER_PATH}")
         
-        _clf = joblib.load(classifier_file)
-        print("Classifier loaded ✅")
+        try:
+            _clf = joblib.load(classifier_file)
+            print(f"Classifier loaded ✅ (type: {type(_clf).__name__})", file=sys.stderr)
+        except Exception as e:
+            print(f"Error loading classifier: {e}", file=sys.stderr)
+            print(f"This may be due to version incompatibility.", file=sys.stderr)
+            print(f"Consider retraining the model with current library versions.", file=sys.stderr)
+            raise RuntimeError(f"Failed to load classifier: {e}. Model may be incompatible with current scikit-learn version.")
     return _clf
 
 # ===================== DSP helpers =====================
@@ -204,6 +235,13 @@ async def predict(audio: UploadFile = File(...)):
 
 # ===================== Mount app (NO preload at import) =====================
 # Export ASGI app for Spaces (FastAPI with Gradio mounted at "/")
+print("Mounting Gradio app to FastAPI...", file=sys.stderr)
 app = gr.mount_gradio_app(api, demo, path="/")
+
+print("=" * 60, file=sys.stderr)
+print("✓ Application initialized successfully!", file=sys.stderr)
+print(f"✓ Device: {DEVICE}", file=sys.stderr)
+print(f"✓ Models will load on first request (lazy loading)", file=sys.stderr)
+print("=" * 60, file=sys.stderr)
 
 # No warmup here. Models load on first request to avoid blocking initialization.
