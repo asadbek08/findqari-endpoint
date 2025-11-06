@@ -7,7 +7,7 @@ soundfile
 joblib
 scikit-learn==1.2.2
 speechbrain==0.5.16
-huggingface_hub==0.19.4
+huggingface_hub>=0.33.5,<2.0
 gradio==5.49.1
 fastapi
 uvicorn
