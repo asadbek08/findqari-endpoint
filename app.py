@@ -308,3 +308,17 @@ print(f"✓ Models will load on first request (lazy loading)", file=sys.stderr)
 print("✓ UI available at /", file=sys.stderr)
 print("✓ API endpoints: /health and /predict", file=sys.stderr)
 print("=" * 60, file=sys.stderr)
+
+# For Docker deployment
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 7860))
+    host = os.environ.get("HOST", "0.0.0.0")
+    
+    print(f"Starting server on {host}:{port}")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info"
+    )

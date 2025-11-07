@@ -3,10 +3,8 @@ title: Qari Recognizer
 emoji: 🎵
 colorFrom: blue
 colorTo: green
-sdk: gradio
-sdk_version: 4.44.0
-app_file: app.py
-pinned: false
+sdk: docker
+app_port: 7860
 ---
 
 # Qari Recognizer
@@ -52,20 +50,41 @@ Response format:
 
 ## Local Development
 
-1. Install dependencies:
+### Option 1: Docker (Recommended)
 ```bash
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Or build and run manually
+docker build -t qari-recognizer .
+docker run -p 7860:7860 qari-recognizer
+```
+
+### Option 2: Python Environment
+```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-2. Run the application:
-```bash
-python3 start_server.py
-```
+# Run directly
+python3 app.py
 
-Or use uvicorn directly:
-```bash
+# Or with uvicorn
 uvicorn app:app --host 0.0.0.0 --port 7860
 ```
+
+## Docker Deployment
+
+### Hugging Face Spaces
+1. Change SDK to `docker` in README header
+2. Add `Dockerfile` to your Space
+3. Push files - HF will automatically build and deploy
+
+### Other Platforms
+The Docker container is ready for deployment on:
+- Google Cloud Run
+- AWS ECS/Fargate
+- Azure Container Instances
+- Any Docker-compatible platform
 
 ## Model Details
 
