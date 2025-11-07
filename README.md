@@ -137,6 +137,16 @@ const predictQari = async (audioUri) => {
 - **Classifier**: SVM trained on Qari embeddings
 - **Audio Processing**: 16kHz mono, max 12 seconds
 - **Device**: Automatically detects CUDA/CPU
+- **Recognition Classes**: 50 renowned Quranic reciters (see [QARI_LABELS.txt](QARI_LABELS.txt))
+
+### Supported Qaris (50 total)
+The model can identify 50 different Quranic reciters including:
+- **Imams of Masjid al-Haram**: Abdurrahman As-Sudais, Maher Al-Muaiqly, Saud Ash-Shuraim
+- **Legendary Egyptian Reciters**: Abdul Basit Abdussomad, Al-Husary, Mohamed Siddiq El-Minshawi
+- **Popular Contemporary**: Mishary Alafasy, Saad Al-Ghamdi, Abu Bakr Ash-Shatri
+- **And 41 more renowned reciters** from Saudi Arabia, Egypt, Syria, UAE, Kuwait, and other countries
+
+For the complete list with regional distribution, see [QARI_LABELS.txt](QARI_LABELS.txt).
 
 ## 🤝 Contributing
 
