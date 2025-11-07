@@ -1,5 +1,4 @@
-# app.py — minimal, non-blocking startup (HF Spaces friendly)
-
+import io
 import sys
 import os
 import gc
@@ -7,6 +6,8 @@ import numpy as np
 import librosa
 import torch
 import joblib
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import gradio as gr
 
 print("=" * 60, file=sys.stderr)
@@ -37,14 +38,6 @@ except Exception as _e:
     print("INFO: hf_hub_download compat shim not applied:", _e)
 
 try:
-    from fastapi import FastAPI, UploadFile, File
-    from fastapi.responses import JSONResponse
-    print("✓ FastAPI imported", file=sys.stderr)
-except Exception as e:
-    print(f"✗ FastAPI import error: {e}", file=sys.stderr)
-    raise
-
-try:
     from huggingface_hub import snapshot_download, hf_hub_download
     print("✓ Hugging Face Hub imported", file=sys.stderr)
 except Exception as e:
@@ -57,6 +50,13 @@ try:
 except Exception as e:
     print(f"✗ SpeechBrain import error: {e}", file=sys.stderr)
     raise
+
+# ===== Your inference code placeholder =====
+ALLOWED_EXTS = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac"}
+
+def ext_from_name(name: str) -> str:
+    i = name.rfind(".")
+    return name[i:].lower() if i != -1 else ""
 
 # ===================== Config =====================
 SR = 16000
@@ -167,6 +167,26 @@ def load_audio_16k(path: str) -> np.ndarray:
         print(f"Error loading audio: {e}", file=sys.stderr)
         raise
 
+def load_audio_from_bytes(audio_bytes: bytes) -> np.ndarray:
+    """Load audio from bytes using librosa."""
+    try:
+        # Use io.BytesIO to create a file-like object from bytes
+        audio_buffer = io.BytesIO(audio_bytes)
+        y, _ = librosa.load(audio_buffer, sr=SR, mono=True)
+        print(f"Loaded audio shape: {y.shape}, dtype: {y.dtype}", file=sys.stderr)
+        
+        if len(y) < MAX_SAMPLES:
+            # Use numpy padding instead of torch padding
+            y = np.pad(y, (0, MAX_SAMPLES - len(y)), mode='constant', constant_values=0)
+        elif len(y) > MAX_SAMPLES:
+            y = y[:MAX_SAMPLES]
+        
+        print(f"Processed audio shape: {y.shape}", file=sys.stderr)
+        return y.astype(np.float32)
+    except Exception as e:
+        print(f"Error loading audio from bytes: {e}", file=sys.stderr)
+        raise
+
 def extract_embedding_from_path(path: str) -> np.ndarray:
     y = load_audio_16k(path)
     print(f"Audio array shape before tensor: {y.shape}", file=sys.stderr)
@@ -194,90 +214,97 @@ def extract_embedding_from_path(path: str) -> np.ndarray:
     gc.collect()
     return emb
 
-# ===================== Gradio UI (manual testing) =====================
-def predict_gradio(file):
-    if file is None:
-        return "No file provided."
+def extract_embedding_from_bytes(audio_bytes: bytes) -> np.ndarray:
+    """Extract embedding from audio bytes."""
+    y = load_audio_from_bytes(audio_bytes)
+    print(f"Audio array shape before tensor: {y.shape}", file=sys.stderr)
+    
+    # Create tensor with proper dimensions for SpeechBrain ECAPA
+    wav = torch.from_numpy(y).unsqueeze(0).to(DEVICE)  # [1, T] - batch dimension only
+    print(f"Tensor shape: {wav.shape}, device: {wav.device}", file=sys.stderr)
+    
+    with torch.no_grad():
+        try:
+            emb = get_embedder().encode_batch(wav).squeeze().detach().cpu().numpy()
+            print(f"Embedding shape: {emb.shape}", file=sys.stderr)
+        except Exception as e:
+            print(f"Error during embedding extraction: {e}", file=sys.stderr)
+            # Try alternative tensor shape if first attempt fails
+            wav_alt = wav.unsqueeze(1)  # [1, 1, T]
+            print(f"Trying alternative tensor shape: {wav_alt.shape}", file=sys.stderr)
+            emb = get_embedder().encode_batch(wav_alt).squeeze().detach().cpu().numpy()
+            print(f"Alternative embedding shape: {emb.shape}", file=sys.stderr)
+    
+    emb = emb.reshape(1, -1)
+    del wav
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+    return emb
+
+def recognize_qari_from_bytes(audio_bytes: bytes, filename: str) -> str:
+    """Main inference function that takes audio bytes and returns Qari name."""
     try:
-        path = getattr(file, "name", file)  # gradio may pass a path/tempfile
-        print(f"Processing file: {path}", file=sys.stderr)
-        
-        X = extract_embedding_from_path(path)
+        X = extract_embedding_from_bytes(audio_bytes)
         print(f"Extracted embedding shape: {X.shape}", file=sys.stderr)
         
         pred = str(get_classifier().predict(X)[0])
         print(f"Prediction: {pred}", file=sys.stderr)
         
-        return f"Predicted Qari: {pred}"
+        return pred
     except Exception as e:
-        print(f"Prediction error: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return f"Error: {str(e)}"
+        print(f"Recognition error: {str(e)}", file=sys.stderr)
+        raise
 
-ui = gr.Interface(
-    fn=predict_gradio,
-    inputs=gr.Audio(
-        sources=["upload", "microphone"],
-        type="filepath",
-        label="Upload or record recitation (.wav/.m4a/.mp3/.flac/.ogg/.aac)"
-    ),
-    outputs=gr.Textbox(label="Prediction"),
+# ===== Gradio UI (optional) =====
+def gradio_predict(file_path):
+    # Gradio's Audio(type="filepath") gives a path; read bytes and reuse same model function
+    with open(file_path, "rb") as f:
+        audio_bytes = f.read()
+    qari_name = recognize_qari_from_bytes(audio_bytes, file_path)
+    return qari_name
+
+demo = gr.Interface(
+    fn=gradio_predict,
+    inputs=gr.Audio(type="filepath", label="Upload or record audio"),
+    outputs=gr.Textbox(label="Predicted Qari"),
     title="Qari Recognizer",
-    description="Uploads a short recitation and predicts the Qari name."
 )
 
-# Export a Gradio variable so the SDK detects a Gradio app
-demo = ui
+# ===== FastAPI app with CORS =====
+app = FastAPI(title="Qari Recognizer API")
 
-# ===================== FastAPI JSON API =====================
-api = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],       # tighten for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@api.get("/health")
-async def health():
+@app.get("/health")
+def health():
     return {"status": "ok", "device": DEVICE}
 
-@api.post("/predict")
+@app.post("/predict")
 async def predict(audio: UploadFile = File(...)):
-    """
-    Multipart form-data:
-      field: audio (file)
-    Returns:
-      { "qariName": "<string>", "device": "cpu|cuda" }
-    """
-    try:
-        suffix = os.path.splitext(audio.filename or "")[1].lower()
-        if suffix not in [".wav", ".m4a", ".mp3", ".flac", ".ogg", ".aac", ""]:
-            return JSONResponse({"error": f"Unsupported file type: {suffix}"}, status_code=400)
+    ext = ext_from_name(audio.filename or "")
+    if ext not in ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext or '(no extension)'}")
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio file")
 
-        tmp_path = "tmp_audio" + (suffix if suffix else ".m4a")
-        with open(tmp_path, "wb") as f:
-            f.write(await audio.read())
+    qari_name = recognize_qari_from_bytes(audio_bytes, audio.filename or "audio")
+    return {"qariName": qari_name, "device": DEVICE}
 
-        X = extract_embedding_from_path(tmp_path)
-        pred = str(get_classifier().predict(X)[0])
+# Mount UI at root, keep API routes as-is
+app = gr.mount_gradio_app(app, demo, path="/")
 
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-        return JSONResponse({"qariName": pred, "device": DEVICE})
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-# ===================== For Gradio SDK =====================
-# Export the Gradio interface as the main app
 print("=" * 60, file=sys.stderr)
 print("✓ Application initialized successfully!", file=sys.stderr)
 print(f"✓ Device: {DEVICE}", file=sys.stderr)
 print(f"✓ Models will load on first request (lazy loading)", file=sys.stderr)
+print("✓ UI available at /", file=sys.stderr)
+print("✓ API endpoints: /health and /predict", file=sys.stderr)
 print("=" * 60, file=sys.stderr)
-
-# For Gradio SDK - this will be the main interface
-app = demo
-
-# Also create FastAPI app for API access (will be available at /api/)
-api_app = api
-
-# No warmup here. Models load on first request to avoid blocking initialization.
