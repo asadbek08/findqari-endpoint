@@ -2,6 +2,7 @@ import io
 import sys
 import os
 import gc
+import tempfile
 import numpy as np
 import librosa
 import torch
@@ -167,13 +168,37 @@ def load_audio_16k(path: str) -> np.ndarray:
         print(f"Error loading audio: {e}", file=sys.stderr)
         raise
 
-def load_audio_from_bytes(audio_bytes: bytes) -> np.ndarray:
-    """Load audio from bytes using librosa."""
+def load_audio_from_bytes(audio_bytes: bytes, filename: str = "audio") -> np.ndarray:
+    """Load audio from bytes using librosa with temporary file fallback."""
     try:
-        # Use io.BytesIO to create a file-like object from bytes
+        # First try direct loading from BytesIO
         audio_buffer = io.BytesIO(audio_bytes)
-        y, _ = librosa.load(audio_buffer, sr=SR, mono=True)
-        print(f"Loaded audio shape: {y.shape}, dtype: {y.dtype}", file=sys.stderr)
+        try:
+            y, _ = librosa.load(audio_buffer, sr=SR, mono=True)
+            print(f"Loaded audio directly from bytes, shape: {y.shape}, dtype: {y.dtype}", file=sys.stderr)
+        except Exception as direct_error:
+            print(f"Direct loading failed: {direct_error}, trying temp file approach...", file=sys.stderr)
+            
+            # Fallback: write to temporary file and load
+            
+            # Determine file extension
+            ext = ext_from_name(filename)
+            if not ext:
+                ext = ".wav"  # default extension
+            
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_path = tmp_file.name
+            
+            try:
+                y, _ = librosa.load(tmp_path, sr=SR, mono=True)
+                print(f"Loaded audio from temp file, shape: {y.shape}, dtype: {y.dtype}", file=sys.stderr)
+            finally:
+                # Clean up temp file
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
         
         if len(y) < MAX_SAMPLES:
             # Use numpy padding instead of torch padding
@@ -214,9 +239,9 @@ def extract_embedding_from_path(path: str) -> np.ndarray:
     gc.collect()
     return emb
 
-def extract_embedding_from_bytes(audio_bytes: bytes) -> np.ndarray:
+def extract_embedding_from_bytes(audio_bytes: bytes, filename: str = "audio") -> np.ndarray:
     """Extract embedding from audio bytes."""
-    y = load_audio_from_bytes(audio_bytes)
+    y = load_audio_from_bytes(audio_bytes, filename)
     print(f"Audio array shape before tensor: {y.shape}", file=sys.stderr)
     
     # Create tensor with proper dimensions for SpeechBrain ECAPA
@@ -245,7 +270,7 @@ def extract_embedding_from_bytes(audio_bytes: bytes) -> np.ndarray:
 def recognize_qari_from_bytes(audio_bytes: bytes, filename: str) -> str:
     """Main inference function that takes audio bytes and returns Qari name."""
     try:
-        X = extract_embedding_from_bytes(audio_bytes)
+        X = extract_embedding_from_bytes(audio_bytes, filename)
         print(f"Extracted embedding shape: {X.shape}", file=sys.stderr)
         
         pred = str(get_classifier().predict(X)[0])
@@ -259,10 +284,24 @@ def recognize_qari_from_bytes(audio_bytes: bytes, filename: str) -> str:
 # ===== Gradio UI (optional) =====
 def gradio_predict(file_path):
     # Gradio's Audio(type="filepath") gives a path; read bytes and reuse same model function
-    with open(file_path, "rb") as f:
-        audio_bytes = f.read()
-    qari_name = recognize_qari_from_bytes(audio_bytes, file_path)
-    return qari_name
+    if file_path is None:
+        return "No audio file provided"
+    
+    try:
+        # Handle both string paths and file objects
+        if isinstance(file_path, str):
+            path = file_path
+        else:
+            # Handle Gradio file object
+            path = getattr(file_path, 'name', str(file_path))
+        
+        with open(path, "rb") as f:
+            audio_bytes = f.read()
+        qari_name = recognize_qari_from_bytes(audio_bytes, path)
+        return qari_name
+    except Exception as e:
+        print(f"Gradio prediction error: {e}", file=sys.stderr)
+        return f"Error: {str(e)}"
 
 demo = gr.Interface(
     fn=gradio_predict,
