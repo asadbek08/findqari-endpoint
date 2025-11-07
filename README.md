@@ -1,13 +1,10 @@
----
-title: Qari Recognizer
-emoji: 🎵
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
----
+# 🎵 Qari Recognizer
 
-# Qari Recognizer
+[![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green.svg)](https://fastapi.tiangolo.com)
+[![Gradio](https://img.shields.io/badge/Gradio-4.44.0-orange.svg)](https://gradio.app)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://docker.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A machine learning application that identifies Quranic reciters (Qaris) from audio recordings using SpeechBrain ECAPA embeddings and SVM classification.
 
@@ -18,7 +15,8 @@ A machine learning application that identifies Quranic reciters (Qaris) from aud
   - `GET /health` - Health check endpoint
   - `POST /predict` - Audio prediction endpoint (accepts multipart form data)
 - **CORS Support**: Configured for cross-origin requests
-- **HF Spaces Compatible**: Works seamlessly on Hugging Face Spaces
+- **Docker Ready**: Containerized for easy deployment
+- **Mobile App Compatible**: Perfect for React Native/Expo applications
 
 ## API Usage
 
@@ -72,23 +70,95 @@ python3 app.py
 uvicorn app:app --host 0.0.0.0 --port 7860
 ```
 
-## Docker Deployment
+## 🚀 Deployment Options
+
+### Docker Deployment (Recommended)
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_USERNAME/qari-recognizer.git
+cd qari-recognizer
+
+# Build and run with Docker Compose
+docker-compose up --build
+
+# Or build and run manually
+docker build -t qari-recognizer .
+docker run -p 7860:7860 qari-recognizer
+```
+
+### Cloud Platforms
+The Docker container is ready for deployment on:
+- **Google Cloud Run**: `gcloud run deploy --source .`
+- **AWS ECS/Fargate**: Use the provided Dockerfile
+- **Azure Container Instances**: Deploy from Docker Hub
+- **Heroku**: Use container registry
+- **Railway/Render**: Connect your GitHub repo
 
 ### Hugging Face Spaces
-1. Change SDK to `docker` in README header
-2. Add `Dockerfile` to your Space
-3. Push files - HF will automatically build and deploy
+1. Create a new Space with `sdk: docker`
+2. Push your code to the Space repository
+3. HF will automatically build and deploy
 
-### Other Platforms
-The Docker container is ready for deployment on:
-- Google Cloud Run
-- AWS ECS/Fargate
-- Azure Container Instances
-- Any Docker-compatible platform
+## 📱 Mobile App Integration
 
-## Model Details
+Perfect for React Native/Expo apps:
+
+```javascript
+// Health check
+const healthCheck = async () => {
+  const response = await fetch('https://your-api-url.com/health');
+  return response.json();
+};
+
+// Predict Qari from audio file
+const predictQari = async (audioUri) => {
+  const formData = new FormData();
+  formData.append('audio', {
+    uri: audioUri,
+    type: 'audio/wav',
+    name: 'recording.wav',
+  });
+  
+  const response = await fetch('https://your-api-url.com/predict', {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  
+  return response.json();
+};
+```
+
+## 🧠 Model Details
 
 - **Embedding Model**: SpeechBrain ECAPA-TDNN (speechbrain/spkrec-ecapa-voxceleb)
 - **Classifier**: SVM trained on Qari embeddings
 - **Audio Processing**: 16kHz mono, max 12 seconds
 - **Device**: Automatically detects CUDA/CPU
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [SpeechBrain](https://speechbrain.github.io/) for the ECAPA-TDNN model
+- [FastAPI](https://fastapi.tiangolo.com/) for the web framework
+- [Gradio](https://gradio.app/) for the UI components
+
+## 📞 Support
+
+If you have any questions or issues, please:
+1. Check the [Issues](https://github.com/YOUR_USERNAME/qari-recognizer/issues) page
+2. Create a new issue if needed
+3. Provide detailed information about your problem
